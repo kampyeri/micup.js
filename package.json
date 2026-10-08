@@ -1,0 +1,28 @@
+{
+    "name": "micup.js",
+    "version": "0.1.0",
+    "description": "Micup bot kütüphanesi (Fluxer tabanlı Micup API ve gateway için)",
+    "main": "micup.js",
+    "type": "module",
+    "files": [
+        "micup.js"
+    ],
+    "scripts": {
+        "example": "node example/ping.js"
+    },
+    "keywords": [
+        "micup",
+        "fluxer",
+        "bot"
+    ],
+    "license": "MIT",
+    "engines": {
+        "node": ">=18.0.0"
+    },
+    "dependencies": {
+        "ws": "^8.18.0"
+    },
+    "devDependencies": {
+        "dotenv": "^16.4.1"
+    }
+}
