@@ -1,20 +1,46 @@
 {
     "name": "micup.js",
-    "version": "0.1.0",
-    "description": "Micup bot kütüphanesi (Fluxer tabanlı Micup API ve gateway için)",
+    "version": "0.2.0",
+    "description": "Micup (Fluxer tabanlı) bot kütüphanesi: gateway, REST, mesaj olayları. discord.js benzeri kullanım.",
     "main": "micup.js",
+    "module": "micup.js",
+    "types": "index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./index.d.ts",
+            "import": "./micup.js",
+            "default": "./micup.js"
+        },
+        "./package.json": "./package.json"
+    },
     "type": "module",
     "files": [
-        "micup.js"
+        "micup.js",
+        "index.d.ts",
+        "README.md",
+        "LICENSE"
     ],
     "scripts": {
+        "test": "node --test test/",
         "example": "node example/ping.js"
     },
     "keywords": [
         "micup",
         "fluxer",
-        "bot"
+        "discord",
+        "bot",
+        "gateway",
+        "websocket"
     ],
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/kampyeri/micup.js.git"
+    },
+    "homepage": "https://github.com/kampyeri/micup.js#readme",
+    "bugs": {
+        "url": "https://github.com/kampyeri/micup.js/issues"
+    },
+    "author": "kampyeri",
     "license": "MIT",
     "engines": {
         "node": ">=18.0.0"

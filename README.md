@@ -1,25 +1,37 @@
 # micup.js
 
-Micup (Fluxer tabanlı) için Node.js bot kütüphanesi. Sıfır bağımlılık hedefi var; tek bağımlılık gateway WebSocket için `ws`.
+Micup (Fluxer tabanlı) için Node.js bot kütüphanesi. `discord.js` ile benzer bir yapıda: `Client`, olaylar (`on('ready')`, `on('messageCreate')`), `message.reply()`.
 
 ## Kurulum
 
+GitHub'dan:
+
 ```bash
-npm install
+npm install github:kampyeri/micup.js
 ```
+
+Yerel klasörden:
+
+```bash
+npm install ../micup.js
+```
+
+Node.js 18 veya üstü gerekir. TypeScript tipleri paketle birlikte gelir.
 
 ## Hızlı başlangıç
 
 ```js
-import { Client, Intents } from 'micup.js';
+import { Client, Intents, Events } from 'micup.js';
 
 const client = new Client({
     intents: Intents.Guilds | Intents.GuildMessages | Intents.MessageContent,
 });
 
-client.on('ready', c => console.log(`Giriş: ${c.user.username}`));
+client.on(Events.Ready, c => {
+    console.log(`Giriş yapıldı: ${c.user.username}`);
+});
 
-client.on('messageCreate', async message => {
+client.on(Events.MessageCreate, async message => {
     if (message.isBot) return;
     if (message.content === '!ping') await message.reply('pong');
 });
@@ -27,32 +39,78 @@ client.on('messageCreate', async message => {
 await client.login(process.env.MICUP_BOT_TOKEN);
 ```
 
-## API
+## Client
 
-- `new Client({ intents })`: intents verilmezse Guilds + GuildMessages + MessageContent kullanılır.
-- `client.login(token)`: token'ı REST'te doğrular, sonra gateway'e bağlanır.
-- `client.send(channelId, content | body)`: kanala mesaj gönderir, `Message` döner.
-- `client.rest(method, path, body)`: ham REST çağrısı. Yol `/users/@me` gibi, `/api/v1` öneki otomatik eklenir.
-- `client.destroy()`: bağlantıyı kapatır, yeniden bağlanmayı durdurur.
-- `message.reply(content)`, `message.isBot`, `message.content`, `message.author`.
+| Seçenek / metot | Açıklama |
+|---|---|
+| `new Client({ intents, origin })` | `intents`: gateway intent bit alanı (varsayılan: Guilds, GuildMessages, MessageContent). `origin`: Micup kök adresi (varsayılan: `https://micup.gg`, kendi sunucunuz için değiştirin). |
+| `await client.login(token)` | Token'ı REST'te doğrular, ardından gateway'e bağlanır. Hatalı token'da `MicupError` fırlatır. |
+| `client.send(channelId, content \| body)` | Kanala mesaj gönderir, `Message` döner. |
+| `client.rest(method, path, body)` | Ham REST çağrısı. Örnek: `client.rest('GET', '/users/@me')`. `/api/v1` öneki otomatik eklenir. |
+| `client.isReady()` | `READY` alındıysa `true`. |
+| `client.user` | Bot kullanıcı bilgisi (giriş sonrası dolar). |
+| `client.destroy()` | Bağlantıyı kapatır ve yeniden bağlanmayı durdurur. |
 
-Olaylar: `ready`, `messageCreate`, `disconnect`, `error`. Diğer gateway olayları `client.on('<event_adı_küçük_harf>')` ile dinlenebilir.
+## Message
+
+| Alan / metot | Açıklama |
+|---|---|
+| `id`, `channelId`, `guildId`, `content`, `author` | Mesaj bilgileri. |
+| `isBot` | Yazan hesap bot ise `true`. Kendi mesajlarını yok saymak için kullanın. |
+| `reply(content \| body)` | Bu mesaja yanıt verir. |
+| `raw` | Micup'tan gelen ham veri. |
+
+## Olaylar
+
+| Olay | Argümanlar | Ne zaman |
+|---|---|---|
+| `ready` | `client` | Gateway `READY` gönderdiğinde. |
+| `messageCreate` | `message` | Yeni mesaj geldiğinde. |
+| `disconnect` | `code`, `reason` | Gateway bağlantısı koptuğunda. Kapanma kodu kalıcı hataysa (örn. 4004) yeniden bağlanılmaz. |
+| `error` | `error` | Gateway hatası. Dinleyici yoksa hata sessizce yutulur, süreç düşmez. |
+
+Diğer gateway olayları küçük harfli adla yayılır: `GUILD_CREATE` → `guild_create`.
+
+## Hatalar
+
+API hataları `MicupError` olarak gelir:
+
+```js
+import { MicupError } from 'micup.js';
+
+try {
+    await client.login(token);
+} catch (err) {
+    if (err instanceof MicupError) console.error(err.status, err.code);
+}
+```
 
 ## Micup'a özgü bilgiler
-
-Bu değerler canlı uç noktalardan doğrulandı:
 
 | Ne | Değer |
 |---|---|
 | Keşif | `https://micup.gg/.well-known/fluxer` |
 | REST | `https://micup.gg/api/v1` |
-| Gateway | `wss://micup.gg/gateway?v=1&encoding=json` (sürüm 10 reddediliyor: 4012) |
-| Gateway ilk paket | `op 10` Hello, `heartbeat_interval` 41250 ms |
+| Gateway | `wss://micup.gg/gateway?v=1&encoding=json` |
 | Yetkilendirme | `Authorization: Bot <token>` |
 
-## Doğrulanmamış noktalar
+Bu değerler canlı uç noktalardan doğrulandı (keşif, REST yetki yanıtı, gateway Hello ve Identify yanıtı).
 
-- Intent bit değerleri Discord ile aynı varsayıldı. Gerçek bir token ile test edilmeli.
-- `Identify` yanıtı ve `READY` içeriği gerçek token ile doğrulanmalı.
-- Resume (kopan oturumu sürdürme) desteklenmiyor; her yeniden bağlantıda yeni kimlik doğrulaması yapılır.
-- micup.gg/docs Cloudflare arkasında olduğu için resmi dokümanla karşılaştırılamadı.
+## Test
+
+```bash
+npm install
+npm test
+```
+
+## Bilinen sınırlar
+
+- Gerçek bir bot token'ı ile `READY` ve mesaj akışı uçtan uca henüz doğrulanmadı.
+- Intent bit değerleri Discord ile aynı varsayıldı.
+- Resume (kopan oturumu sürdürme) yok; her yeniden bağlantıda kimlik doğrulaması yapılır.
+- Slash komutları, bileşenler (buton/menü/modal) ve ses desteği yok.
+- `micup.gg/docs` Cloudflare arkasında olduğu için resmi dokümanla karşılaştırılamadı.
+
+## Lisans
+
+MIT
