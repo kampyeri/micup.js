@@ -10,7 +10,10 @@ test('Intents bit değerleri doğru', () => {
 
 test('Varsayılan intents ve origin', () => {
     const c = new Client();
-    assert.equal(c.intents, Intents.Guilds | Intents.GuildMessages | Intents.MessageContent);
+    assert.equal(
+        c.intents,
+        Intents.Guilds | Intents.GuildMessages | Intents.MessageContent | Intents.GuildVoiceStates,
+    );
     assert.equal(c.origin, 'https://micup.gg');
 });
 

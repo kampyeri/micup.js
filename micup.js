@@ -6,18 +6,22 @@ const API_VERSION = 1;
 const GATEWAY_VERSION = 1;
 const RECONNECT_DELAY_MS = 5000;
 const INVALID_SESSION_DELAY_MS = 2000;
-const USER_AGENT = 'micup.js/0.1.0';
+const VOICE_JOIN_TIMEOUT_MS = 15000;
+const USER_AGENT = 'micup.js/0.3.0';
 
 export const Intents = Object.freeze({
     Guilds: 1 << 0,
     GuildMessages: 1 << 9,
     DirectMessages: 1 << 12,
+    GuildVoiceStates: 1 << 7,
     MessageContent: 1 << 15,
 });
 
 export const Events = Object.freeze({
     Ready: 'ready',
     MessageCreate: 'messageCreate',
+    VoiceStateUpdate: 'voiceStateUpdate',
+    VoiceServerUpdate: 'voiceServerUpdate',
     Disconnect: 'disconnect',
     Error: 'error',
 });
@@ -26,6 +30,7 @@ const Op = Object.freeze({
     Dispatch: 0,
     Heartbeat: 1,
     Identify: 2,
+    VoiceStateUpdate: 4,
     Reconnect: 7,
     InvalidSession: 9,
     Hello: 10,
@@ -42,6 +47,13 @@ export class MicupError extends Error {
         this.status = status;
         this.code = body?.code ?? null;
         this.body = body;
+    }
+}
+
+export class VoiceError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'VoiceError';
     }
 }
 
@@ -72,15 +84,108 @@ export class Message {
     }
 }
 
+/**
+ * Ses kanalına katılma ve ayrılma. Ses akışını (medya) bu sınıf yapmaz;
+ * katılım sonrası verilen bilgiler ses istemcisine iletilir.
+ */
+export class VoiceManager {
+    constructor(client) {
+        this.client = client;
+        // guildId -> Map(userId -> voice state)
+        this.states = new Map();
+        // guildId -> bekleyen katılım isteği
+        this.pending = new Map();
+    }
+
+    /** Bir guild'deki tüm ses durumlarını döndürür. */
+    getStates(guildId) {
+        return [...(this.states.get(guildId)?.values() ?? [])];
+    }
+
+    /** Bot'un ses kanalına katılır. Gateway'den durum ve sunucu bilgisi gelince çözülür. */
+    join(guildId, channelId, { selfMute = false, selfDeaf = false } = {}) {
+        if (!guildId || !channelId) throw new VoiceError('guildId ve channelId gerekli.');
+        if (!this.client.ws || !this.client.isReady()) throw new VoiceError('Önce client.login() ile bağlanın.');
+
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+                this.pending.delete(guildId);
+                reject(new VoiceError('Ses kanalına katılma zaman aşımına uğradı.'));
+            }, VOICE_JOIN_TIMEOUT_MS);
+            this.pending.set(guildId, { state: null, server: null, resolve, reject, timer });
+            this.client.sendGateway(Op.VoiceStateUpdate, {
+                guild_id: guildId,
+                channel_id: channelId,
+                self_mute: selfMute,
+                self_deaf: selfDeaf,
+            });
+        });
+    }
+
+    /** Bot'u ses kanalından çıkarır. */
+    leave(guildId) {
+        this.client.sendGateway(Op.VoiceStateUpdate, { guild_id: guildId, channel_id: null });
+        this.pending.get(guildId)?.reject(new VoiceError('Katılım iptal edildi.'));
+        this.#clearPending(guildId);
+    }
+
+    /** @internal Gateway VOICE_STATE_UPDATE olayını işler. */
+    handleStateUpdate(data) {
+        const guildId = data.guild_id;
+        const userId = data.user_id;
+        if (!guildId || !userId) return;
+
+        let guild = this.states.get(guildId);
+        if (!guild) this.states.set(guildId, (guild = new Map()));
+        if (data.channel_id) guild.set(userId, data);
+        else guild.delete(userId);
+
+        const pending = this.pending.get(guildId);
+        if (pending && userId === this.client.user?.id) {
+            pending.state = data.channel_id ? data : null;
+            this.#maybeResolve(guildId);
+        }
+    }
+
+    /** @internal Gateway VOICE_SERVER_UPDATE olayını işler. */
+    handleServerUpdate(data) {
+        const pending = this.pending.get(data.guild_id);
+        if (pending) {
+            pending.server = data;
+            this.#maybeResolve(data.guild_id);
+        }
+    }
+
+    #maybeResolve(guildId) {
+        const pending = this.pending.get(guildId);
+        if (!pending || !pending.state || !pending.server) return;
+        this.#clearPending(guildId);
+        pending.resolve({
+            guildId,
+            channelId: pending.state.channel_id,
+            sessionId: pending.state.session_id,
+            endpoint: pending.server.endpoint,
+            token: pending.server.token,
+        });
+    }
+
+    #clearPending(guildId) {
+        const pending = this.pending.get(guildId);
+        if (pending) clearTimeout(pending.timer);
+        this.pending.delete(guildId);
+    }
+}
+
 export class Client extends EventEmitter {
     /**
      * @param {object} [options]
-     * @param {number} [options.intents] Intents bit alanı. Varsayılan: Guilds | GuildMessages | MessageContent.
+     * @param {number} [options.intents] Intents bit alanı. Varsayılan: Guilds | GuildMessages | MessageContent | GuildVoiceStates.
      * @param {string} [options.origin] Micup kök adresi. Kendi (self-hosted) sunucu için değiştirilir.
      */
     constructor(options = {}) {
         super();
-        this.intents = options.intents ?? (Intents.Guilds | Intents.GuildMessages | Intents.MessageContent);
+        this.intents = options.intents
+            ?? (Intents.Guilds | Intents.GuildMessages | Intents.MessageContent | Intents.GuildVoiceStates);
         this.origin = (options.origin ?? DEFAULT_ORIGIN).replace(/\/+$/, '');
         this.user = null;
         this.endpoints = null;
@@ -91,6 +196,7 @@ export class Client extends EventEmitter {
         this.heartbeatTimer = null;
         this.reconnectTimer = null;
         this.ready = false;
+        this.voice = new VoiceManager(this);
     }
 
     isReady() {
@@ -150,6 +256,11 @@ export class Client extends EventEmitter {
         const data = await res.json().catch(() => null);
         if (!res.ok) throw new MicupError(res.status, data);
         return data;
+    }
+
+    /** @internal Gateway'e ham paket gönderir. */
+    sendGateway(op, d) {
+        this.#send({ op, d });
     }
 
     async #discover() {
@@ -219,6 +330,16 @@ export class Client extends EventEmitter {
         }
         if (event === 'MESSAGE_CREATE') {
             this.emit(Events.MessageCreate, new Message(this, data));
+            return;
+        }
+        if (event === 'VOICE_STATE_UPDATE') {
+            this.voice.handleStateUpdate(data);
+            this.emit(Events.VoiceStateUpdate, data);
+            return;
+        }
+        if (event === 'VOICE_SERVER_UPDATE') {
+            this.voice.handleServerUpdate(data);
+            this.emit(Events.VoiceServerUpdate, data);
             return;
         }
         // Diğer gateway olayları küçük harfli adla yayılır (örn. GUILD_CREATE -> guild_create).

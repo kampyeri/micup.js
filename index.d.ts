@@ -1,5 +1,5 @@
 export interface ClientOptions {
-    /** Intents bit alanı. Varsayılan: Intents.Guilds | Intents.GuildMessages | Intents.MessageContent */
+    /** Intents bit alanı. Varsayılan: Guilds | GuildMessages | MessageContent | GuildVoiceStates */
     intents?: number;
     /** Micup kök adresi. Varsayılan: https://micup.gg */
     origin?: string;
@@ -33,16 +33,49 @@ export interface MessageData {
     [key: string]: unknown;
 }
 
+export interface VoiceStateData {
+    guild_id: string;
+    channel_id: string | null;
+    user_id: string;
+    session_id: string;
+    self_mute?: boolean;
+    self_deaf?: boolean;
+    [key: string]: unknown;
+}
+
+export interface VoiceServerData {
+    guild_id: string;
+    endpoint: string;
+    token: string;
+    [key: string]: unknown;
+}
+
+export interface VoiceConnectionInfo {
+    guildId: string;
+    channelId: string;
+    sessionId: string;
+    endpoint: string;
+    token: string;
+}
+
+export interface VoiceJoinOptions {
+    selfMute?: boolean;
+    selfDeaf?: boolean;
+}
+
 export declare const Intents: Readonly<{
     Guilds: number;
     GuildMessages: number;
     DirectMessages: number;
+    GuildVoiceStates: number;
     MessageContent: number;
 }>;
 
 export declare const Events: Readonly<{
     Ready: 'ready';
     MessageCreate: 'messageCreate';
+    VoiceStateUpdate: 'voiceStateUpdate';
+    VoiceServerUpdate: 'voiceServerUpdate';
     Disconnect: 'disconnect';
     Error: 'error';
 }>;
@@ -52,6 +85,10 @@ export class MicupError extends Error {
     readonly code: string | null;
     readonly body: unknown;
     constructor(status: number, body: { code?: string; message?: string } | null);
+}
+
+export class VoiceError extends Error {
+    constructor(message: string);
 }
 
 export class Message {
@@ -67,9 +104,21 @@ export class Message {
     reply(content: string | MessageBody): Promise<Message>;
 }
 
+export class VoiceManager {
+    constructor(client: Client);
+    /** Bir guild'deki bilinen ses durumlarını döndürür. */
+    getStates(guildId: string): VoiceStateData[];
+    /** Bot'u ses kanalına katıştırır. Ses sunucusu bilgisi gelince çözülür. */
+    join(guildId: string, channelId: string, options?: VoiceJoinOptions): Promise<VoiceConnectionInfo>;
+    /** Bot'u ses kanalından çıkarır. */
+    leave(guildId: string): void;
+}
+
 export interface ClientEvents {
     ready: [client: Client];
     messageCreate: [message: Message];
+    voiceStateUpdate: [state: VoiceStateData];
+    voiceServerUpdate: [server: VoiceServerData];
     disconnect: [code: number, reason: string];
     error: [error: Error];
     [gatewayEvent: string]: unknown[];
@@ -81,6 +130,7 @@ export class Client {
     user: MicupUser | null;
     readonly token: string | null;
     readonly destroyed: boolean;
+    readonly voice: VoiceManager;
 
     constructor(options?: ClientOptions);
 
