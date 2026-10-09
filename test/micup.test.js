@@ -1,20 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Client, Intents, Events, Message, MicupError } from '../micup.js';
+import { Client, Events, Message, MicupError } from '../micup.js';
 
-test('Intents bit değerleri doğru', () => {
-    assert.equal(Intents.Guilds, 1);
-    assert.equal(Intents.GuildMessages, 512);
-    assert.equal(Intents.MessageContent, 32768);
-});
-
-test('Varsayılan intents ve origin', () => {
+test('varsayılan origin ve boş ignoredEvents', () => {
     const c = new Client();
-    assert.equal(
-        c.intents,
-        Intents.Guilds | Intents.GuildMessages | Intents.MessageContent | Intents.GuildVoiceStates,
-    );
     assert.equal(c.origin, 'https://micup.gg');
+    assert.deepEqual(c.ignoredEvents, []);
 });
 
 test('origin sondaki eğik çizgiyi temizler', () => {

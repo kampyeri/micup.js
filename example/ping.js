@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { Client, Intents } from '../micup.js';
+import { Client } from '../micup.js';
 
 const token = process.env.MICUP_BOT_TOKEN;
 if (!token) {
@@ -7,9 +7,7 @@ if (!token) {
     process.exit(1);
 }
 
-const client = new Client({
-    intents: Intents.Guilds | Intents.GuildMessages | Intents.MessageContent,
-});
+const client = new Client();
 
 client.on('ready', c => {
     console.log(`Giriş yapıldı: ${c.user.username}`);

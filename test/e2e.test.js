@@ -101,7 +101,8 @@ test('giriş: REST doğrulama, gateway Identify ve ready olayı', async () => {
     assert.equal(c.user.username, 'testbot');
     assert.equal(client.isReady(), true);
     assert.equal(received.identify.token, TOKEN);
-    assert.ok(received.identify.intents & (1 << 15), 'MessageContent intent gönderilmeli');
+    assert.equal('intents' in received.identify, false, 'Micup Identify içinde intents beklemez');
+    assert.equal('ignored_events' in received.identify, false, 'ignoredEvents verilmezse alan gönderilmez');
     client.destroy();
 });
 

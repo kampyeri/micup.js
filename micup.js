@@ -7,15 +7,7 @@ const GATEWAY_VERSION = 1;
 const RECONNECT_DELAY_MS = 5000;
 const INVALID_SESSION_DELAY_MS = 2000;
 const VOICE_JOIN_TIMEOUT_MS = 15000;
-const USER_AGENT = 'micup.js/0.3.0';
-
-export const Intents = Object.freeze({
-    Guilds: 1 << 0,
-    GuildMessages: 1 << 9,
-    DirectMessages: 1 << 12,
-    GuildVoiceStates: 1 << 7,
-    MessageContent: 1 << 15,
-});
+const USER_AGENT = 'micup.js/0.4.0';
 
 export const Events = Object.freeze({
     Ready: 'ready',
@@ -37,8 +29,10 @@ const Op = Object.freeze({
     HeartbeatAck: 11,
 });
 
-// Bu kodlarla bağlantı yeniden denenmez (kimlik hatası, geçersiz sürüm, yetkisiz intent).
-const FATAL_CLOSE_CODES = new Set([4004, 4012, 4013, 4014]);
+// Micup kapanma kodları (gateway/opcodes-and-close-codes). Bu kodlarda yeniden bağlanmak işe yaramaz.
+// 4001 bilinmeyen opcode, 4002 çözümleme hatası, 4003 yetkisiz, 4004 kimlik hatası,
+// 4005 zaten kimliği doğrulanmış, 4012 geçersiz API sürümü.
+const FATAL_CLOSE_CODES = new Set([4001, 4002, 4003, 4004, 4005, 4012]);
 
 export class MicupError extends Error {
     constructor(status, body) {
@@ -179,13 +173,12 @@ export class VoiceManager {
 export class Client extends EventEmitter {
     /**
      * @param {object} [options]
-     * @param {number} [options.intents] Intents bit alanı. Varsayılan: Guilds | GuildMessages | MessageContent | GuildVoiceStates.
+     * @param {string[]} [options.ignoredEvents] Bu oturumun almak istemediği olay adları (örn. ['TYPING_START']).
      * @param {string} [options.origin] Micup kök adresi. Kendi (self-hosted) sunucu için değiştirilir.
      */
     constructor(options = {}) {
         super();
-        this.intents = options.intents
-            ?? (Intents.Guilds | Intents.GuildMessages | Intents.MessageContent | Intents.GuildVoiceStates);
+        this.ignoredEvents = options.ignoredEvents ?? [];
         this.origin = (options.origin ?? DEFAULT_ORIGIN).replace(/\/+$/, '');
         this.user = null;
         this.endpoints = null;
@@ -351,8 +344,8 @@ export class Client extends EventEmitter {
             op: Op.Identify,
             d: {
                 token: this.token,
-                intents: this.intents,
                 properties: { os: process.platform, browser: 'micup.js', device: 'micup.js' },
+                ...(this.ignoredEvents.length ? { ignored_events: this.ignoredEvents } : {}),
             },
         });
     }

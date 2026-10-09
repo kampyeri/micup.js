@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Client, Intents, VoiceError, Events } from '../micup.js';
+import { Client, VoiceError, Events } from '../micup.js';
 
 // Gateway olmadan, ses katılım akışını sahte bir istemciyle test eder.
 function fakeReadyClient() {
@@ -12,11 +12,6 @@ function fakeReadyClient() {
     c.sendGateway = (op, d) => c.sent.push({ op, d });
     return c;
 }
-
-test('GuildVoiceStates intent varsayılan olarak açık', () => {
-    assert.equal(Intents.GuildVoiceStates, 128);
-    assert.ok((new Client().intents & Intents.GuildVoiceStates) !== 0);
-});
 
 test('join gateway op 4 gönderir ve durum + sunucu gelince çözülür', async () => {
     const c = fakeReadyClient();

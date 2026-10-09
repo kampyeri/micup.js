@@ -1,6 +1,6 @@
 export interface ClientOptions {
-    /** Intents bit alanı. Varsayılan: Guilds | GuildMessages | MessageContent | GuildVoiceStates */
-    intents?: number;
+    /** Bu oturumun almak istemediği olay adları (örn. ['TYPING_START']). Micup'ta intent yoktur. */
+    ignoredEvents?: string[];
     /** Micup kök adresi. Varsayılan: https://micup.gg */
     origin?: string;
 }
@@ -63,14 +63,6 @@ export interface VoiceJoinOptions {
     selfDeaf?: boolean;
 }
 
-export declare const Intents: Readonly<{
-    Guilds: number;
-    GuildMessages: number;
-    DirectMessages: number;
-    GuildVoiceStates: number;
-    MessageContent: number;
-}>;
-
 export declare const Events: Readonly<{
     Ready: 'ready';
     MessageCreate: 'messageCreate';
@@ -125,7 +117,7 @@ export interface ClientEvents {
 }
 
 export class Client {
-    readonly intents: number;
+    readonly ignoredEvents: string[];
     readonly origin: string;
     user: MicupUser | null;
     readonly token: string | null;
