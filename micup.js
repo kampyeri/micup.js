@@ -7,7 +7,7 @@ const GATEWAY_VERSION = 1;
 const RECONNECT_DELAY_MS = 5000;
 const INVALID_SESSION_DELAY_MS = 2000;
 const VOICE_JOIN_TIMEOUT_MS = 15000;
-const USER_AGENT = 'micup.js/0.4.0';
+const USER_AGENT = 'micup.js/0.5.0';
 
 export const Events = Object.freeze({
     Ready: 'ready',
@@ -22,6 +22,7 @@ const Op = Object.freeze({
     Dispatch: 0,
     Heartbeat: 1,
     Identify: 2,
+    PresenceUpdate: 3,
     VoiceStateUpdate: 4,
     Reconnect: 7,
     InvalidSession: 9,
@@ -170,14 +171,41 @@ export class VoiceManager {
     }
 }
 
+// Bot durumu (gateway/commands, Presence Update). Bağlıyken "offline" seçilemez; Micup onu "invisible" yapar.
+export const Status = Object.freeze({
+    Online: 'online',
+    Idle: 'idle',
+    DoNotDisturb: 'dnd',
+    Invisible: 'invisible',
+});
+
+const VALID_STATUSES = new Set(Object.values(Status));
+
+/**
+ * Presence paketini kurar.
+ * customStatus: metin ya da { text, emoji_name, emoji_id, expires_at }; null mesajı siler; verilmezse mevcut mesaj korunur.
+ */
+export function buildPresence({ status = Status.Online, customStatus } = {}) {
+    if (!VALID_STATUSES.has(status)) throw new Error(`Geçersiz durum: ${status}`);
+    const presence = { status, afk: false, mobile: false };
+    if (customStatus !== undefined) {
+        presence.custom_status = customStatus === null
+            ? null
+            : typeof customStatus === 'string' ? { text: customStatus } : customStatus;
+    }
+    return presence;
+}
+
 export class Client extends EventEmitter {
     /**
      * @param {object} [options]
      * @param {string[]} [options.ignoredEvents] Bu oturumun almak istemediği olay adları (örn. ['TYPING_START']).
      * @param {string} [options.origin] Micup kök adresi. Kendi (self-hosted) sunucu için değiştirilir.
+     * @param {{ status?: string, customStatus?: string | object | null }} [options.presence] Açılıştaki durum.
      */
     constructor(options = {}) {
         super();
+        this.presence = options.presence ? buildPresence(options.presence) : null;
         this.ignoredEvents = options.ignoredEvents ?? [];
         this.origin = (options.origin ?? DEFAULT_ORIGIN).replace(/\/+$/, '');
         this.user = null;
@@ -254,6 +282,17 @@ export class Client extends EventEmitter {
     /** @internal Gateway'e ham paket gönderir. */
     sendGateway(op, d) {
         this.#send({ op, d });
+    }
+
+    /**
+     * Botun durumunu ve durum mesajını değiştirir. Micup sınırı: 20 saniyede en fazla 5 değişiklik.
+     * Son ayarlanan durum saklanır ve yeniden bağlanınca tekrar uygulanır.
+     * @param {{ status?: string, customStatus?: string | object | null }} presence
+     */
+    setPresence(presence) {
+        this.presence = buildPresence(presence);
+        this.sendGateway(Op.PresenceUpdate, this.presence);
+        return this.presence;
     }
 
     async #discover() {
@@ -345,6 +384,7 @@ export class Client extends EventEmitter {
             d: {
                 token: this.token,
                 properties: { os: process.platform, browser: 'micup.js', device: 'micup.js' },
+                ...(this.presence ? { presence: this.presence } : {}),
                 ...(this.ignoredEvents.length ? { ignored_events: this.ignoredEvents } : {}),
             },
         });

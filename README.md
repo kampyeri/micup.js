@@ -62,6 +62,24 @@ const states = client.voice.getStates(guildId);
 
 `join`, gateway'den ses durumu ve ses sunucusu bilgisi gelince çözülür. Ses medyası (Opus, şifreleme, yayın) bu kütüphanede yoktur; `info` bilgileri bir ses istemcisine verilmelidir.
 
+## Durum (presence)
+
+```js
+import { Client, Status } from 'micup.js';
+
+// Açılış durumu
+const client = new Client({ presence: { status: Status.Online, customStatus: 'Sunucunu Büyüt' } });
+
+// Çalışırken değiştirme
+client.setPresence({ status: Status.Idle, customStatus: 'micup.gg/dcsv' });
+client.setPresence({ customStatus: null }); // durum mesajını siler
+```
+
+- Durumlar: `online`, `idle`, `dnd`, `invisible`. Bağlıyken `offline` seçilemez.
+- Micup'ta "Oynuyor/İzliyor" gibi aktiviteler yoktur; yalnızca durum mesajı (custom status) vardır.
+- Sınır: 20 saniyede en fazla 5 durum değişikliği.
+- Son ayarlanan durum yeniden bağlanınca otomatik uygulanır.
+
 ## Olaylar
 
 | Olay | Argümanlar | Ne zaman |

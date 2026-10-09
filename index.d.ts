@@ -1,6 +1,8 @@
 export interface ClientOptions {
     /** Bu oturumun almak istemediği olay adları (örn. ['TYPING_START']). Micup'ta intent yoktur. */
     ignoredEvents?: string[];
+    /** Açılıştaki durum ve durum mesajı. */
+    presence?: PresenceInput;
     /** Micup kök adresi. Varsayılan: https://micup.gg */
     origin?: string;
 }
@@ -72,6 +74,37 @@ export declare const Events: Readonly<{
     Error: 'error';
 }>;
 
+export type StatusValue = 'online' | 'idle' | 'dnd' | 'invisible';
+
+export declare const Status: Readonly<{
+    Online: 'online';
+    Idle: 'idle';
+    DoNotDisturb: 'dnd';
+    Invisible: 'invisible';
+}>;
+
+export interface CustomStatus {
+    text?: string | null;
+    emoji_name?: string | null;
+    emoji_id?: string | null;
+    expires_at?: string | null;
+}
+
+export interface PresenceInput {
+    status?: StatusValue;
+    /** Metin ya da durum nesnesi. null mesajı siler; verilmezse mevcut mesaj korunur. */
+    customStatus?: string | CustomStatus | null;
+}
+
+export interface PresencePayload {
+    status: StatusValue;
+    afk: boolean;
+    mobile: boolean;
+    custom_status?: CustomStatus | null;
+}
+
+export declare function buildPresence(input?: PresenceInput): PresencePayload;
+
 export class MicupError extends Error {
     readonly status: number;
     readonly code: string | null;
@@ -123,12 +156,15 @@ export class Client {
     readonly token: string | null;
     readonly destroyed: boolean;
     readonly voice: VoiceManager;
+    presence: PresencePayload | null;
 
     constructor(options?: ClientOptions);
 
     login(token: string): Promise<this>;
     destroy(): void;
     isReady(): boolean;
+    /** Durumu ve durum mesajını değiştirir (20 saniyede en fazla 5 kez). */
+    setPresence(presence: PresenceInput): PresencePayload;
     send(channelId: string, body: string | MessageBody): Promise<Message>;
     rest<T = unknown>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<T>;
 

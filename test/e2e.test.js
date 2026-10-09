@@ -11,7 +11,7 @@ const BOT = { id: 'bot1', username: 'testbot', bot: true };
 let server;
 let wss;
 let origin;
-const received = { identify: null, posted: [], voice: [] };
+const received = { identify: null, posted: [], voice: [], presence: [] };
 
 function startServer() {
     return new Promise(resolve => {
@@ -64,6 +64,7 @@ function startServer() {
                         d: { id: 'm1', channel_id: 'ch1', guild_id: 'g1', content: '!ping', author: { id: 'u1', username: 'ali', bot: false } },
                     });
                 }
+                if (p.op === 3) received.presence.push(p.d);
                 if (p.op === 4) {
                     received.voice.push(p.d);
                     if (p.d.channel_id) {
@@ -146,5 +147,19 @@ test('ses kanalına katılma ve ayrılma uçtan uca çalışır', async () => {
     client.voice.leave('g1');
     await new Promise(r => setTimeout(r, 50));
     assert.equal(client.voice.getStates('g1').length, 0);
+    client.destroy();
+});
+
+test('durum: Identify açılış durumunu taşır, setPresence gateway e opcode 3 gönderir', async () => {
+    const client = new Client({ origin, presence: { customStatus: 'Açılış durumu' } });
+    const ready = waitFor(client, Events.Ready);
+    await client.login(TOKEN);
+    await ready;
+    assert.equal(received.identify.presence.custom_status.text, 'Açılış durumu');
+
+    client.setPresence({ customStatus: 'micup.gg/dcsv' });
+    await new Promise(r => setTimeout(r, 50));
+    assert.equal(received.presence.at(-1).custom_status.text, 'micup.gg/dcsv');
+    assert.equal(received.presence.at(-1).status, 'online');
     client.destroy();
 });
