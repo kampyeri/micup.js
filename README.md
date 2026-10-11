@@ -53,14 +53,54 @@ await client.login(process.env.MICUP_BOT_TOKEN);
 
 ## Ses (voice)
 
-```js
-const info = await client.voice.join(guildId, channelId, { selfMute: false });
-// info: { guildId, channelId, sessionId, endpoint, token }
-client.voice.leave(guildId);
-const states = client.voice.getStates(guildId);
+Bot ses kanalına girip dosya, internet bağlantısı ya da akış çalabilir. Micup'un sesi LiveKit üzerinden çalışır; micup.js bağlantıyı kurar, sesi ffmpeg ile çevirip gönderir.
+
+**Kurulum** (sesi kullanacaksanız):
+
+```bash
+npm install micup.js @livekit/rtc-node ffmpeg-static
 ```
 
-`join`, gateway'den ses durumu ve ses sunucusu bilgisi gelince çözülür. Ses medyası (Opus, şifreleme, yayın) bu kütüphanede yoktur; `info` bilgileri bir ses istemcisine verilmelidir.
+`ffmpeg-static` yerine sistemde kurulu `ffmpeg` de kullanılabilir (ya da `FFMPEG_PATH` ortam değişkeni). Docker'da `ca-certificates` paketi kurulu olmalıdır (`node:*-slim` imajlarında yoktur).
+
+```js
+import { Client, Events } from 'micup.js';
+
+const client = new Client();
+
+client.on(Events.MessageCreate, async message => {
+    if (message.content === '!çal') {
+        // Komutu yazanın bulunduğu ses kanalı
+        const state = client.voice.getStates(message.guildId).find(s => s.user_id === message.author.id);
+        if (!state) return message.reply('Önce bir ses kanalına gir.');
+
+        const connection = await client.voice.connect(message.guildId, state.channel_id);
+        await connection.play('./muzik.mp3', { volume: 0.8 }); // parça bitince çözülür
+        await connection.disconnect();
+    }
+    if (message.content === '!dur') client.voice.getConnection(message.guildId)?.stop();
+});
+
+await client.login(process.env.MICUP_BOT_TOKEN);
+```
+
+| Metot / alan | Açıklama |
+|---|---|
+| `await client.voice.connect(guildId, channelId, { volume, selfDeaf })` | Kanala girer, ses sunucusuna bağlanır, `VoiceConnection` döner. |
+| `client.voice.getConnection(guildId)` | Açık bağlantı ya da `null`. |
+| `client.voice.getStates(guildId)` | Kanaldaki ses durumları (kim hangi kanalda, sessiz mi). |
+| `client.voice.leave(guildId)` | Kanaldan çıkar. |
+| `await connection.play(girdi, { volume, seek, ffmpegArgs, raw })` | Dosya yolu, `http(s)` bağlantısı ya da akış çalar. Önceki parça durur. `raw: true`: girdi 48 kHz stereo s16le PCM. |
+| `connection.pause()` / `resume()` / `stop()` | Duraklat, devam et, durdur. |
+| `connection.setVolume(0-2)` | Ses seviyesi. |
+| `connection.playing`, `paused`, `status`, `memberCount` | Durum bilgileri. |
+| `await connection.disconnect()` | Kanaldan çıkar, bağlantıyı kapatır. |
+
+Bağlantı olayları: `start`, `finish` (`{ stopped }`), `status` (`connecting`, `ready`, `reconnecting`, `disconnected`), `memberJoin`, `memberLeave`, `disconnect`, `error`.
+
+- Botun kanalı görme ve **Bağlan** izni olmalı; **Konuş** izni yoksa bot girer ama ses duyulmaz.
+- Bot kanaldan atılırsa bağlantı kapanır (`disconnect` olayı); kanal taşınırsa yeniden bağlanır.
+- `client.voice.join()` yalnızca Micup'un ses yetkisini (`endpoint`, `token`, `connectionId`) döndürür; kendi ses istemcinizi kullanacaksanız işinize yarar.
 
 ## Durum (presence)
 
@@ -137,9 +177,9 @@ Testler, yerel bir sahte Micup sunucusuna karşı uçtan uca gateway akışını
 
 ## Bilinen sınırlar
 
-- Gerçek Micup botuyla giriş ve mesaj akışı token ile test edildi; ses akışı henüz test edilmedi.
+- Gerçek Micup botuyla giriş, mesaj ve ses çalma (bağlanma, dosya çalma, duraklat / devam / durdur, çıkış) test edildi.
 - Resume (kopan oturumu sürdürme) yok; her yeniden bağlantıda kimlik doğrulaması yapılır.
-- Ses medyası yok.
+- Ses yalnızca gönderilir; kanaldakileri dinleme / kayıt ve görüntü (kamera, ekran paylaşımı) yok.
 
 ## Lisans
 

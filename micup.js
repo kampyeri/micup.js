@@ -7,7 +7,7 @@ const GATEWAY_VERSION = 1;
 const RECONNECT_DELAY_MS = 5000;
 const INVALID_SESSION_DELAY_MS = 2000;
 const VOICE_JOIN_TIMEOUT_MS = 15000;
-const USER_AGENT = 'micup.js/0.5.0';
+const USER_AGENT = 'micup.js/0.6.0';
 
 export const Events = Object.freeze({
     Ready: 'ready',
@@ -90,6 +90,11 @@ export class VoiceManager {
         this.states = new Map();
         // guildId -> bekleyen katılım isteği
         this.pending = new Map();
+        // guildId -> son ses yetkisi (VOICE_SERVER_UPDATE) ve açık ses bağlantısı
+        this.grants = new Map();
+        this.connections = new Map();
+        // Ses medyası LiveKit üzerinden akar; paket yalnızca connect() ile ses kullanılınca yüklenir.
+        this.loadLiveKit = () => import('@livekit/rtc-node');
     }
 
     /** Bir guild'deki tüm ses durumlarını döndürür. */
@@ -97,29 +102,87 @@ export class VoiceManager {
         return [...(this.states.get(guildId)?.values() ?? [])];
     }
 
-    /** Bot'un ses kanalına katılır. Gateway'den durum ve sunucu bilgisi gelince çözülür. */
+    /** Guild'deki açık ses bağlantısı (connect ile açılan). */
+    getConnection(guildId) {
+        return this.connections.get(guildId) ?? null;
+    }
+
+    /**
+     * Ses kanalı için yetki ister. Micup ses yetkisini (VOICE_SERVER_UPDATE) gönderince çözülür.
+     * Bot kanalda ancak bu yetkiyle medya sunucusuna (LiveKit) bağlanınca görünür; ses çalmak için connect() kullanın.
+     */
     join(guildId, channelId, { selfMute = false, selfDeaf = false } = {}) {
         if (!guildId || !channelId) throw new VoiceError('guildId ve channelId gerekli.');
         if (!this.client.ws || !this.client.isReady()) throw new VoiceError('Önce client.login() ile bağlanın.');
+        this.pending.get(guildId)?.reject(new VoiceError('Yeni bir katılım isteğiyle iptal edildi.'));
+        this.#clearPending(guildId);
 
         return new Promise((resolve, reject) => {
             const timer = setTimeout(() => {
                 this.pending.delete(guildId);
-                reject(new VoiceError('Ses kanalına katılma zaman aşımına uğradı.'));
+                reject(new VoiceError('Ses yetkisi gelmedi: botun kanalı görme ve bağlanma (CONNECT) izni olduğundan, kanalın dolu olmadığından emin olun.'));
             }, VOICE_JOIN_TIMEOUT_MS);
-            this.pending.set(guildId, { state: null, server: null, resolve, reject, timer });
+            this.pending.set(guildId, { channelId, resolve, reject, timer });
             this.client.sendGateway(Op.VoiceStateUpdate, {
                 guild_id: guildId,
                 channel_id: channelId,
                 self_mute: selfMute,
                 self_deaf: selfDeaf,
+                self_video: false,
+                self_stream: false,
             });
         });
     }
 
-    /** Bot'u ses kanalından çıkarır. */
+    /**
+     * Ses kanalına girer ve medya sunucusuna bağlanır; ses çalınabilen bir VoiceConnection döndürür.
+     * Gerekli paket: npm install @livekit/rtc-node (dosya / bağlantı çalmak için ayrıca ffmpeg).
+     * @returns {Promise<import('./voice.js').VoiceConnection>}
+     */
+    async connect(guildId, channelId, options = {}) {
+        const existing = this.connections.get(guildId);
+        if (existing && existing.channelId === channelId && !existing.destroyed) return existing;
+        if (existing) await existing.disconnect();
+        const { VoiceConnection } = await import('./voice.js');
+        const livekit = await this.loadLiveKit().catch(() => {
+            throw new VoiceError('Ses için @livekit/rtc-node paketi gerekli: npm install @livekit/rtc-node');
+        });
+        const grant = await this.join(guildId, channelId, options);
+        const connection = new VoiceConnection(this, livekit, grant, options);
+        this.connections.set(guildId, connection);
+        try {
+            await connection.open();
+        } catch (err) {
+            this.connections.delete(guildId);
+            this.leave(guildId);
+            throw err;
+        }
+        return connection;
+    }
+
+    /** Bot'u ses kanalından çıkarır (açık bağlantı varsa onu da kapatır). */
     leave(guildId) {
-        this.client.sendGateway(Op.VoiceStateUpdate, { guild_id: guildId, channel_id: null });
+        const connection = this.connections.get(guildId);
+        if (connection && !connection.destroyed) {
+            connection.disconnect().catch(() => {});
+            return;
+        }
+        this.#sendLeave(guildId);
+    }
+
+    /** @internal */
+    sendLeave(guildId) {
+        this.#sendLeave(guildId);
+    }
+
+    #sendLeave(guildId) {
+        const connectionId = this.grants.get(guildId)?.connectionId;
+        this.client.sendGateway(Op.VoiceStateUpdate, {
+            guild_id: guildId,
+            channel_id: null,
+            ...(connectionId ? { connection_id: connectionId } : {}),
+        });
+        this.grants.delete(guildId);
         this.pending.get(guildId)?.reject(new VoiceError('Katılım iptal edildi.'));
         this.#clearPending(guildId);
     }
@@ -135,33 +198,43 @@ export class VoiceManager {
         if (data.channel_id) guild.set(userId, data);
         else guild.delete(userId);
 
-        const pending = this.pending.get(guildId);
-        if (pending && userId === this.client.user?.id) {
-            pending.state = data.channel_id ? data : null;
-            this.#maybeResolve(guildId);
+        // Bot bir yönetici tarafından kanaldan atıldıysa açık bağlantı kapatılır.
+        if (userId === this.client.user?.id && !data.channel_id) {
+            const connection = this.connections.get(guildId);
+            if (connection && connection.connectionId === data.connection_id) connection.disconnect({ notify: false }).catch(() => {});
         }
+    }
+
+    /** @internal GUILD_CREATE'teki mevcut ses durumlarını yükler (bot açılmadan önce kanalda olanlar). */
+    loadGuildStates(guildId, voiceStates) {
+        if (!guildId || !Array.isArray(voiceStates)) return;
+        const guild = new Map();
+        for (const state of voiceStates) {
+            if (state?.user_id && state.channel_id) guild.set(state.user_id, { ...state, guild_id: state.guild_id ?? guildId });
+        }
+        this.states.set(guildId, guild);
     }
 
     /** @internal Gateway VOICE_SERVER_UPDATE olayını işler. */
     handleServerUpdate(data) {
-        const pending = this.pending.get(data.guild_id);
-        if (pending) {
-            pending.server = data;
-            this.#maybeResolve(data.guild_id);
-        }
-    }
-
-    #maybeResolve(guildId) {
-        const pending = this.pending.get(guildId);
-        if (!pending || !pending.state || !pending.server) return;
-        this.#clearPending(guildId);
-        pending.resolve({
+        const guildId = data.guild_id;
+        if (!guildId) return;
+        const grant = {
             guildId,
-            channelId: pending.state.channel_id,
-            sessionId: pending.state.session_id,
-            endpoint: pending.server.endpoint,
-            token: pending.server.token,
-        });
+            channelId: data.channel_id ?? this.pending.get(guildId)?.channelId ?? null,
+            connectionId: data.connection_id ?? null,
+            endpoint: data.endpoint,
+            token: data.token,
+        };
+        this.grants.set(guildId, grant);
+        const pending = this.pending.get(guildId);
+        if (pending) {
+            this.#clearPending(guildId);
+            pending.resolve(grant);
+            return;
+        }
+        // Kanal taşıma ya da bölge değişikliği: Micup yeni yetki gönderir, açık bağlantı yeniden kurulur.
+        this.connections.get(guildId)?.regrant(grant);
     }
 
     #clearPending(guildId) {
@@ -242,6 +315,7 @@ export class Client extends EventEmitter {
 
     destroy() {
         this.destroyed = true;
+        for (const connection of this.voice.connections.values()) connection.disconnect().catch(() => {});
         this.ready = false;
         this.#stopHeartbeat();
         clearTimeout(this.reconnectTimer);
@@ -381,6 +455,7 @@ export class Client extends EventEmitter {
             this.emit(Events.VoiceServerUpdate, data);
             return;
         }
+        if (event === 'GUILD_CREATE') this.voice.loadGuildStates(data?.id, data?.voice_states);
         // Diğer gateway olayları küçük harfli adla yayılır (örn. GUILD_CREATE -> guild_create).
         this.emit(event.toLowerCase(), data);
     }

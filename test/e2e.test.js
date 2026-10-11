@@ -68,10 +68,11 @@ function startServer() {
                 if (p.op === 4) {
                     received.voice.push(p.d);
                     if (p.d.channel_id) {
-                        send(0, { t: 'VOICE_STATE_UPDATE', s: 3, d: { guild_id: 'g1', channel_id: p.d.channel_id, user_id: BOT.id, session_id: 'sess1' } });
-                        send(0, { t: 'VOICE_SERVER_UPDATE', s: 4, d: { guild_id: 'g1', endpoint: 'voice.test', token: 'vtoken' } });
+                        // Gerçek Micup gibi: önce ses yetkisi gelir; botun ses durumu medya bağlantısından sonra yayılır.
+                        send(0, { t: 'VOICE_SERVER_UPDATE', s: 3, d: { guild_id: 'g1', channel_id: p.d.channel_id, connection_id: 'conn1', endpoint: 'wss://voice.test', token: 'vtoken' } });
+                        send(0, { t: 'VOICE_STATE_UPDATE', s: 4, d: { guild_id: 'g1', channel_id: p.d.channel_id, user_id: BOT.id, connection_id: 'conn1' } });
                     } else {
-                        send(0, { t: 'VOICE_STATE_UPDATE', s: 5, d: { guild_id: 'g1', channel_id: null, user_id: BOT.id, session_id: 'sess1' } });
+                        send(0, { t: 'VOICE_STATE_UPDATE', s: 5, d: { guild_id: 'g1', channel_id: null, user_id: BOT.id, connection_id: p.d.connection_id } });
                     }
                 }
             });
@@ -138,14 +139,16 @@ test('ses kanalına katılma ve ayrılma uçtan uca çalışır', async () => {
     assert.deepEqual(info, {
         guildId: 'g1',
         channelId: 'vc1',
-        sessionId: 'sess1',
-        endpoint: 'voice.test',
+        connectionId: 'conn1',
+        endpoint: 'wss://voice.test',
         token: 'vtoken',
     });
-    assert.deepEqual(received.voice.at(-1), { guild_id: 'g1', channel_id: 'vc1', self_mute: true, self_deaf: false });
+    assert.deepEqual(received.voice.at(-1), { guild_id: 'g1', channel_id: 'vc1', self_mute: true, self_deaf: false, self_video: false, self_stream: false });
 
+    await new Promise(r => setTimeout(r, 50));
     client.voice.leave('g1');
     await new Promise(r => setTimeout(r, 50));
+    assert.equal(received.voice.at(-1).connection_id, 'conn1', 'çıkışta bağlantı kimliği gönderilir');
     assert.equal(client.voice.getStates('g1').length, 0);
     client.destroy();
 });

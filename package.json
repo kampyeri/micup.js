@@ -1,7 +1,7 @@
 {
     "name": "micup.js",
-    "version": "0.5.1",
-    "description": "Micup (Fluxer tabanlı) bot kütüphanesi: gateway, REST, mesaj olayları. discord.js benzeri kullanım.",
+    "version": "0.6.0",
+    "description": "Micup (Fluxer tabanlı) bot kütüphanesi: gateway, REST, mesaj olayları ve ses kanalında ses çalma. discord.js benzeri kullanım.",
     "main": "micup.js",
     "module": "micup.js",
     "types": "index.d.ts",
@@ -11,12 +11,19 @@
             "import": "./micup.js",
             "default": "./micup.js"
         },
+        "./voice": {
+            "types": "./voice.d.ts",
+            "import": "./voice.js",
+            "default": "./voice.js"
+        },
         "./package.json": "./package.json"
     },
     "type": "module",
     "files": [
         "micup.js",
+        "voice.js",
         "index.d.ts",
+        "voice.d.ts",
         "README.md",
         "LICENSE"
     ],
@@ -30,7 +37,9 @@
         "discord",
         "bot",
         "gateway",
-        "websocket"
+        "websocket",
+        "voice",
+        "livekit"
     ],
     "repository": {
         "type": "git",
@@ -49,6 +58,19 @@
         "ws": "^8.18.0"
     },
     "devDependencies": {
-        "dotenv": "^16.4.1"
+        "dotenv": "^16.4.1",
+        "@livekit/rtc-node": "1.1.0"
+    },
+    "peerDependencies": {
+        "@livekit/rtc-node": "^1.1.0",
+        "ffmpeg-static": "^5.2.0"
+    },
+    "peerDependenciesMeta": {
+        "@livekit/rtc-node": {
+            "optional": true
+        },
+        "ffmpeg-static": {
+            "optional": true
+        }
     }
 }

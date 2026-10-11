@@ -39,7 +39,8 @@ export interface VoiceStateData {
     guild_id: string;
     channel_id: string | null;
     user_id: string;
-    session_id: string;
+    session_id?: string;
+    connection_id?: string;
     self_mute?: boolean;
     self_deaf?: boolean;
     [key: string]: unknown;
@@ -47,15 +48,20 @@ export interface VoiceStateData {
 
 export interface VoiceServerData {
     guild_id: string;
+    channel_id?: string;
+    connection_id?: string;
+    /** LiveKit medya sunucusu (örn. wss://ses-1.micup.gg). */
     endpoint: string;
+    /** Medya yetkisi; 600 saniye geçerlidir. */
     token: string;
     [key: string]: unknown;
 }
 
+/** Micup'un verdiği ses yetkisi (VOICE_SERVER_UPDATE). */
 export interface VoiceConnectionInfo {
     guildId: string;
-    channelId: string;
-    sessionId: string;
+    channelId: string | null;
+    connectionId: string | null;
     endpoint: string;
     token: string;
 }
@@ -63,6 +69,13 @@ export interface VoiceConnectionInfo {
 export interface VoiceJoinOptions {
     selfMute?: boolean;
     selfDeaf?: boolean;
+}
+
+export interface VoiceConnectOptions extends VoiceJoinOptions {
+    /** Başlangıç ses seviyesi (0-2). Varsayılan 1. */
+    volume?: number;
+    /** ffmpeg yolu. Varsayılan: FFMPEG_PATH, ffmpeg-static ya da sistemdeki ffmpeg. */
+    ffmpegPath?: string;
 }
 
 export declare const Events: Readonly<{
@@ -133,9 +146,16 @@ export class VoiceManager {
     constructor(client: Client);
     /** Bir guild'deki bilinen ses durumlarını döndürür. */
     getStates(guildId: string): VoiceStateData[];
-    /** Bot'u ses kanalına katıştırır. Ses sunucusu bilgisi gelince çözülür. */
+    /** Ses kanalı için yetki ister; Micup yetkiyi gönderince çözülür. Ses çalmak için connect() kullanın. */
     join(guildId: string, channelId: string, options?: VoiceJoinOptions): Promise<VoiceConnectionInfo>;
-    /** Bot'u ses kanalından çıkarır. */
+    /**
+     * Ses kanalına girer, medya sunucusuna bağlanır ve ses çalınabilen bir bağlantı döndürür.
+     * Gerekli: npm install @livekit/rtc-node (dosya / bağlantı çalmak için ayrıca ffmpeg ya da ffmpeg-static).
+     */
+    connect(guildId: string, channelId: string, options?: VoiceConnectOptions): Promise<import('./voice.js').VoiceConnection>;
+    /** Guild'deki açık ses bağlantısı. */
+    getConnection(guildId: string): import('./voice.js').VoiceConnection | null;
+    /** Bot'u ses kanalından çıkarır (açık bağlantı varsa kapatır). */
     leave(guildId: string): void;
 }
 
