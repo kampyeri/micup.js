@@ -5,7 +5,7 @@ Micup (Fluxer tabanlı) için Node.js bot kütüphanesi. `discord.js` ile benzer
 ## Kurulum
 
 ```bash
-npm install github:kampyeri/micup.js
+npm install micup.js
 ```
 
 Node.js 18 veya üstü gerekir. TypeScript tipleri paketle birlikte gelir.
