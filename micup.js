@@ -216,6 +216,8 @@ export class Client extends EventEmitter {
         this.destroyed = false;
         this.heartbeatTimer = null;
         this.reconnectTimer = null;
+        // Son kalp atışına onay (op 11) geldi mi? Gelmeden yeni atış zamanı gelirse bağlantı ölü sayılır.
+        this.heartbeatAcked = true;
         this.ready = false;
         this.voice = new VoiceManager(this);
     }
@@ -342,6 +344,10 @@ export class Client extends EventEmitter {
             case Op.Dispatch:
                 this.#dispatch(packet.t, packet.d);
                 break;
+            case Op.Heartbeat:
+                // Sunucu hemen kalp atışı istedi.
+                this.#send({ op: Op.Heartbeat, d: this.seq });
+                break;
             case Op.Reconnect:
                 this.ws?.close(1000);
                 break;
@@ -349,6 +355,7 @@ export class Client extends EventEmitter {
                 setTimeout(() => this.#identify(), INVALID_SESSION_DELAY_MS);
                 break;
             case Op.HeartbeatAck:
+                this.heartbeatAcked = true;
                 break;
         }
     }
@@ -392,7 +399,18 @@ export class Client extends EventEmitter {
 
     #startHeartbeat(interval) {
         this.#stopHeartbeat();
-        const beat = () => this.#send({ op: Op.Heartbeat, d: this.seq });
+        this.heartbeatAcked = true;
+        const beat = () => {
+            // Önceki atışa onay gelmediyse bağlantı yarı açık (zombi) kalmıştır: olaylar gelmez, kapanma da tetiklenmez.
+            // Soket sonlandırılır; 'close' olayı yeniden bağlanmayı başlatır.
+            if (!this.heartbeatAcked) {
+                this.#stopHeartbeat();
+                this.ws?.terminate();
+                return;
+            }
+            this.heartbeatAcked = false;
+            this.#send({ op: Op.Heartbeat, d: this.seq });
+        };
         // İlk kalp atışı rastgele gecikmeyle, sonra düzenli aralıkla gönderilir.
         this.heartbeatTimer = setTimeout(() => {
             beat();
