@@ -203,3 +203,6 @@ export class Client {
 }
 
 export default Client;
+
+/** Kütüphanenin yapımcısı: "DCSV" (https://dcsv.me). */
+export const MADE_BY: string;

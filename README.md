@@ -1,5 +1,7 @@
 # micup.js
 
+**Made by DCSV** · [dcsv.me](https://dcsv.me) · [micup.me](https://micup.me)
+
 Micup (Fluxer tabanlı) için Node.js bot kütüphanesi. `discord.js` ile benzer bir yapıda: `Client`, olaylar (`on('ready')`, `on('messageCreate')`), `message.reply()`.
 
 ## Kurulum

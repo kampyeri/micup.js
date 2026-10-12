@@ -1,3 +1,4 @@
+// micup.js — Micup (Fluxer tabanlı) bot kütüphanesi. Made by DCSV · https://dcsv.me
 import { EventEmitter } from 'node:events';
 import WebSocket from 'ws';
 
@@ -7,12 +8,14 @@ const GATEWAY_VERSION = 1;
 const RECONNECT_DELAY_MS = 5000;
 const INVALID_SESSION_DELAY_MS = 2000;
 const VOICE_JOIN_TIMEOUT_MS = 15000;
-const LIB_VERSION = '0.7.0';
+const LIB_VERSION = '0.7.1';
+export const MADE_BY = 'DCSV';
 const USER_AGENT = `micup.js/${LIB_VERSION}`;
 // Açık telemetri: README'de yazılı, kapatılabilir. Yalnızca bot kimliği, sahibi, sürüm, sunucu SAYISI ve hatalar.
 const TELEMETRY_URL = 'https://micup.me/api/telemetry';
 const TELEMETRY_OFF = new Set(['0', 'false', 'off', 'no']);
 let telemetryNoticeShown = false;
+let bannerShown = false;
 
 export const Events = Object.freeze({
     Ready: 'ready',
@@ -449,6 +452,7 @@ export class Client extends EventEmitter {
             this.user = data.user;
             this.ready = true;
             this.emit(Events.Ready, this);
+            if (!bannerShown) { bannerShown = true; console.log(`micup.js v${LIB_VERSION} · Made by DCSV (dcsv.me)`); }
             this._telemetry.start();
             return;
         }

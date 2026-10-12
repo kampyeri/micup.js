@@ -1,6 +1,6 @@
 {
     "name": "micup.js",
-    "version": "0.7.0",
+    "version": "0.7.1",
     "description": "Micup (Fluxer tabanlı) bot kütüphanesi: gateway, REST, mesaj olayları ve ses kanalında ses çalma. discord.js benzeri kullanım.",
     "main": "micup.js",
     "module": "micup.js",
@@ -49,7 +49,7 @@
     "bugs": {
         "url": "https://github.com/kampyeri/micup.js/issues"
     },
-    "author": "kampyeri",
+    "author": "DCSV (https://dcsv.me)",
     "license": "MIT",
     "engines": {
         "node": ">=18.0.0"
@@ -72,5 +72,8 @@
         "ffmpeg-static": {
             "optional": true
         }
-    }
+    },
+    "contributors": [
+        "kampyeri"
+    ]
 }
