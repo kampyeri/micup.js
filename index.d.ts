@@ -5,6 +5,12 @@ export interface ClientOptions {
     presence?: PresenceInput;
     /** Micup kök adresi. Varsayılan: https://micup.gg */
     origin?: string;
+    /**
+     * Açık kullanım ve hata bildirimi (telemetri). Varsayılan açık.
+     * Gönderilen: bot kimliği ve adı, bot sahibinin kimliği ve adı, micup.js / Node sürümü, platform, sunucu SAYISI ve hatalar.
+     * Kapatmak: `false` ya da `MICUP_TELEMETRY=0`. Adresi değiştirmek: `{ url }`.
+     */
+    telemetry?: boolean | string | { url?: string };
 }
 
 export interface MessageReference {

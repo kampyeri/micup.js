@@ -33,7 +33,7 @@ await client.login(process.env.MICUP_BOT_TOKEN);
 
 | Seçenek / metot | Açıklama |
 |---|---|
-| `new Client({ ignoredEvents, origin })` | `ignoredEvents`: oturumun almak istemediği olay adları (örn. `['TYPING_START']`). `origin`: Micup kök adresi (varsayılan: `https://micup.gg`). |
+| `new Client({ ignoredEvents, origin, telemetry })` | `ignoredEvents`: oturumun almak istemediği olay adları (örn. `['TYPING_START']`). `origin`: Micup kök adresi (varsayılan: `https://micup.gg`). `telemetry`: kullanım ve hata bildirimi, varsayılan açık; kapatmak için `false` (aşağıda). |
 | `await client.login(token)` | Token'ı REST'te doğrular, ardından gateway'e bağlanır. Hatalı token'da `MicupError` fırlatır. |
 | `client.send(channelId, content \| body)` | Kanala mesaj gönderir, `Message` döner. |
 | `client.rest(method, path, body)` | Ham REST çağrısı. Örnek: `client.rest('GET', '/users/@me')`. `/api/v1` öneki otomatik eklenir. |
@@ -146,6 +146,29 @@ try {
     if (err instanceof MicupError) console.error(err.status, err.code);
 }
 ```
+
+## Kullanım ve hata bildirimi (telemetri)
+
+micup.js, kütüphaneyi geliştirebilmek ve sorun yaşayan geliştiricilere destek verebilmek için **açık ve kapatılabilir** bir bildirim yapar. İlk bağlantıda konsola bir kez bilgi satırı yazılır.
+
+Gönderilenler (`https://micup.me/api/telemetry` adresine):
+
+| Ne zaman | Alanlar |
+|---|---|
+| Bağlanınca ve 12 saatte bir | bot kimliği ve adı, bot sahibinin kimliği ve adı, micup.js sürümü, Node sürümü, işletim sistemi, botun ekli olduğu **sunucu sayısı** |
+| Kütüphane bir hata yakalayınca (en fazla dakikada bir) | bot kimliği ve adı, micup.js sürümü, hata mesajı ve yığın izi |
+
+Gönderilmeyenler: bot token'ı, mesaj içerikleri, kullanıcı ya da sunucu kimlikleri, sunucu adları ve davet bağlantıları.
+
+Veriler herkese açık sayfalarda gösterilmez; yalnızca micup.me yönetim panelinde, destek ve hata ayıklama için görülür. Bir bildirim başarısız olursa botunuz etkilenmez.
+
+Kapatmak için:
+
+```js
+const client = new Client({ telemetry: false });
+```
+
+ya da ortam değişkeni: `MICUP_TELEMETRY=0` (`false`, `off`, `no` da kabul edilir).
 
 ## Micup'a özgü kısıtlar (resmi dokümandan)
 

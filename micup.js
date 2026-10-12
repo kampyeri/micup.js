@@ -7,7 +7,12 @@ const GATEWAY_VERSION = 1;
 const RECONNECT_DELAY_MS = 5000;
 const INVALID_SESSION_DELAY_MS = 2000;
 const VOICE_JOIN_TIMEOUT_MS = 15000;
-const USER_AGENT = 'micup.js/0.6.0';
+const LIB_VERSION = '0.7.0';
+const USER_AGENT = `micup.js/${LIB_VERSION}`;
+// Açık telemetri: README'de yazılı, kapatılabilir. Yalnızca bot kimliği, sahibi, sürüm, sunucu SAYISI ve hatalar.
+const TELEMETRY_URL = 'https://micup.me/api/telemetry';
+const TELEMETRY_OFF = new Set(['0', 'false', 'off', 'no']);
+let telemetryNoticeShown = false;
 
 export const Events = Object.freeze({
     Ready: 'ready',
@@ -293,6 +298,9 @@ export class Client extends EventEmitter {
         this.heartbeatAcked = true;
         this.ready = false;
         this.voice = new VoiceManager(this);
+        // Bulunulan sunucular (telemetri için yalnızca sayısı kullanılır) ve açık telemetri.
+        this._guilds = new Set();
+        this._telemetry = new Telemetry(this, options.telemetry);
     }
 
     isReady() {
@@ -315,6 +323,7 @@ export class Client extends EventEmitter {
 
     destroy() {
         this.destroyed = true;
+        this._telemetry.stop();
         for (const connection of this.voice.connections.values()) connection.disconnect().catch(() => {});
         this.ready = false;
         this.#stopHeartbeat();
@@ -404,6 +413,7 @@ export class Client extends EventEmitter {
 
     // Dinleyici yoksa 'error' olayı süreci düşürmesin diye yalnızca dinleyici varsa yayılır.
     #emitError(err) {
+        this._telemetry.error(err);
         if (this.listenerCount(Events.Error) > 0) this.emit(Events.Error, err);
     }
 
@@ -439,6 +449,7 @@ export class Client extends EventEmitter {
             this.user = data.user;
             this.ready = true;
             this.emit(Events.Ready, this);
+            this._telemetry.start();
             return;
         }
         if (event === 'MESSAGE_CREATE') {
@@ -455,7 +466,8 @@ export class Client extends EventEmitter {
             this.emit(Events.VoiceServerUpdate, data);
             return;
         }
-        if (event === 'GUILD_CREATE') this.voice.loadGuildStates(data?.id, data?.voice_states);
+        if (event === 'GUILD_CREATE') { this.voice.loadGuildStates(data?.id, data?.voice_states); if (data?.id) this._guilds.add(data.id); }
+        if (event === 'GUILD_DELETE' && data?.id) this._guilds.delete(data.id);
         // Diğer gateway olayları küçük harfli adla yayılır (örn. GUILD_CREATE -> guild_create).
         this.emit(event.toLowerCase(), data);
     }
@@ -501,6 +513,66 @@ export class Client extends EventEmitter {
 
     #send(payload) {
         if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(payload));
+    }
+}
+
+// Açık (README'de yazılı, kapatılabilir) kullanım ve hata bildirimi. Hiçbir hata botu etkilemez.
+class Telemetry {
+    constructor(client, option) {
+        this.client = client;
+        const env = process.env.MICUP_TELEMETRY;
+        this.enabled = option !== false && !(env != null && TELEMETRY_OFF.has(String(env).toLowerCase()));
+        this.url = typeof option === 'string' ? option : (option && option.url) || TELEMETRY_URL;
+        this.owner = null;
+        this.timer = null;
+        this.lastError = 0;
+    }
+
+    start() {
+        if (!this.enabled) return;
+        if (!telemetryNoticeShown) {
+            telemetryNoticeShown = true;
+            console.log("micup.js: kullanim ve hata istatistikleri (bot kimligi, sahip, surum, sunucu sayisi, hatalar) gelistirme icin micup.me'ye bildirilir. Kapatmak: new Client({ telemetry: false }) ya da MICUP_TELEMETRY=0");
+        }
+        this.client.rest('GET', '/applications/@me').then(a => { this.owner = a?.owner ?? null; }, () => {}).finally(() => this.ping());
+        clearInterval(this.timer);
+        this.timer = setInterval(() => this.ping(), 12 * 60 * 60 * 1000);
+        this.timer.unref?.();
+    }
+
+    stop() {
+        clearInterval(this.timer);
+        this.timer = null;
+    }
+
+    ping() {
+        const u = this.client.user;
+        if (!this.enabled || !u?.id) return;
+        this.#post({
+            type: 'ping', botId: u.id, botName: u.username ?? null,
+            ownerId: this.owner?.id ?? null, ownerName: this.owner?.global_name || this.owner?.username || null,
+            version: LIB_VERSION, node: process.version, platform: process.platform, servers: this.client._guilds.size,
+        });
+    }
+
+    error(err) {
+        if (!this.enabled) return;
+        const now = Date.now();
+        if (now - this.lastError < 60000) return;
+        this.lastError = now;
+        this.#post({
+            type: 'error', botId: this.client.user?.id ?? null, botName: this.client.user?.username ?? null,
+            version: LIB_VERSION, message: String(err?.message ?? err).slice(0, 500), stack: err?.stack ? String(err.stack).slice(0, 4000) : null,
+        });
+    }
+
+    #post(body) {
+        try {
+            const ctrl = new AbortController();
+            const t = setTimeout(() => ctrl.abort(), 5000);
+            fetch(this.url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'User-Agent': USER_AGENT }, body: JSON.stringify(body), signal: ctrl.signal })
+                .catch(() => {}).finally(() => clearTimeout(t));
+        } catch { /* yok say */ }
     }
 }
 

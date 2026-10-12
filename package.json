@@ -1,6 +1,6 @@
 {
     "name": "micup.js",
-    "version": "0.6.0",
+    "version": "0.7.0",
     "description": "Micup (Fluxer tabanlı) bot kütüphanesi: gateway, REST, mesaj olayları ve ses kanalında ses çalma. discord.js benzeri kullanım.",
     "main": "micup.js",
     "module": "micup.js",
