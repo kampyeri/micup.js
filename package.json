@@ -1,6 +1,6 @@
 {
     "name": "micup.js",
-    "version": "0.7.1",
+    "version": "0.8.0",
     "description": "Micup (Fluxer tabanlı) bot kütüphanesi: gateway, REST, mesaj olayları ve ses kanalında ses çalma. discord.js benzeri kullanım.",
     "main": "micup.js",
     "module": "micup.js",
@@ -21,6 +21,7 @@
     "type": "module",
     "files": [
         "micup.js",
+        "components.js",
         "voice.js",
         "index.d.ts",
         "voice.d.ts",
@@ -39,7 +40,11 @@
         "gateway",
         "websocket",
         "voice",
-        "livekit"
+        "livekit",
+        "components",
+        "buttons",
+        "select-menu",
+        "pagination"
     ],
     "repository": {
         "type": "git",

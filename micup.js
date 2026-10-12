@@ -1,6 +1,9 @@
 // micup.js — Micup (Fluxer tabanlı) bot kütüphanesi. Made by DCSV · https://dcsv.me
 import { EventEmitter } from 'node:events';
 import WebSocket from 'ws';
+import { ComponentManager, toPayload } from './components.js';
+
+export { Container, SelectMenu, Paginator, ComponentManager, ComponentError, LIMITS as ComponentLimits } from './components.js';
 
 const DEFAULT_ORIGIN = 'https://micup.gg';
 const API_VERSION = 1;
@@ -8,7 +11,7 @@ const GATEWAY_VERSION = 1;
 const RECONNECT_DELAY_MS = 5000;
 const INVALID_SESSION_DELAY_MS = 2000;
 const VOICE_JOIN_TIMEOUT_MS = 15000;
-const LIB_VERSION = '0.7.1';
+const LIB_VERSION = '0.8.0';
 export const MADE_BY = 'DCSV';
 const USER_AGENT = `micup.js/${LIB_VERSION}`;
 // Açık telemetri: README'de yazılı, kapatılabilir. Yalnızca bot kimliği, sahibi, sürüm, sunucu SAYISI ve hatalar.
@@ -75,15 +78,38 @@ export class Message {
         return Boolean(this.author?.bot);
     }
 
+    /** Yanıt: metin, Micup mesaj gövdesi ya da Container / Paginator (butonlarıyla). */
     reply(content) {
-        return this.client.send(this.channelId, {
-            content,
+        const body = {
+            ...toPayload(content),
             message_reference: {
                 message_id: this.id,
                 channel_id: this.channelId,
                 ...(this.guildId ? { guild_id: this.guildId } : {}),
             },
-        });
+        };
+        if (!(content && typeof content.controls === 'function')) return this.client.send(this.channelId, body);
+        // Bileşenli yanıt: gövdeye yanıt bilgisi eklenir, butonlar ve ayarlar asıl bileşenden gelir.
+        return this.client.send(this.channelId, { toMessage: () => body, controls: () => content.controls(), options: content.options });
+    }
+
+    /** Mesajı düzenler (yalnızca botun kendi mesajı). Container / Paginator verilirse butonlar da güncellenir. */
+    async edit(content) {
+        const data = await this.client.rest('PATCH', `/channels/${this.channelId}/messages/${this.id}`, toPayload(content));
+        if (content && typeof content.controls === 'function') await this.client.components.attach(this, content);
+        return new Message(this.client, data ?? this.raw);
+    }
+
+    /** Mesaja tepki ekler. Unicode emoji ya da "ad:id". */
+    react(emoji) {
+        const value = typeof emoji === 'object' ? (emoji.id ? `${emoji.name}:${emoji.id}` : emoji.name) : String(emoji).replace(/^<a?:|>$/g, '');
+        return this.client.rest('PUT', `/channels/${this.channelId}/messages/${this.id}/reactions/${encodeURIComponent(value)}/@me`);
+    }
+
+    /** Mesajı siler. */
+    delete() {
+        this.client.components.release(this.id, 'deleted');
+        return this.client.rest('DELETE', `/channels/${this.channelId}/messages/${this.id}`);
     }
 }
 
@@ -303,6 +329,8 @@ export class Client extends EventEmitter {
         this.voice = new VoiceManager(this);
         // Bulunulan sunucular (telemetri için yalnızca sayısı kullanılır) ve açık telemetri.
         this._guilds = new Set();
+        /** Tepki butonları, seçim menüleri ve sayfalama (bkz. components.js). */
+        this.components = new ComponentManager(this);
         this._telemetry = new Telemetry(this, options.telemetry);
     }
 
@@ -342,9 +370,11 @@ export class Client extends EventEmitter {
      * @returns {Promise<Message>}
      */
     async send(channelId, body) {
-        const payload = typeof body === 'string' ? { content: body } : body;
-        const data = await this.rest('POST', `/channels/${channelId}/messages`, payload);
-        return new Message(this, data);
+        const data = await this.rest('POST', `/channels/${channelId}/messages`, toPayload(body));
+        const message = new Message(this, data);
+        // Container / Paginator: tepki butonları eklenir ve tıklamalar dinlenir.
+        if (body && typeof body.controls === 'function') await this.components.attach(message, body);
+        return message;
     }
 
     /**
@@ -472,6 +502,8 @@ export class Client extends EventEmitter {
         }
         if (event === 'GUILD_CREATE') { this.voice.loadGuildStates(data?.id, data?.voice_states); if (data?.id) this._guilds.add(data.id); }
         if (event === 'GUILD_DELETE' && data?.id) this._guilds.delete(data.id);
+        if (event === 'MESSAGE_REACTION_ADD') this.components.handleReaction(data).catch(err => this.#emitError(err));
+        if (event === 'MESSAGE_DELETE') this.components.handleDelete(data);
         // Diğer gateway olayları küçük harfli adla yayılır (örn. GUILD_CREATE -> guild_create).
         this.emit(event.toLowerCase(), data);
     }

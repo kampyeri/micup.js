@@ -30,7 +30,7 @@ test('telemetri açıkken READY sonrası bot kimliği, sahip ve sunucu SAYISI g�
         assert.equal(b.ownerId, '200');
         assert.equal(b.ownerName, 'Ali');
         assert.equal(b.servers, 3, 'yalnızca sayı');
-        assert.equal(b.version, '0.7.1');
+        assert.equal(b.version, '0.8.0');
         assert.equal('serverIds' in b, false);
         c.destroy();
     } finally { f.restore(); }

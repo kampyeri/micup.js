@@ -40,6 +40,7 @@ await client.login(process.env.MICUP_BOT_TOKEN);
 | `client.send(channelId, content \| body)` | Kanala mesaj gönderir, `Message` döner. |
 | `client.rest(method, path, body)` | Ham REST çağrısı. Örnek: `client.rest('GET', '/users/@me')`. `/api/v1` öneki otomatik eklenir. |
 | `client.voice` | Ses kanalı yönetimi (aşağıda). |
+| `client.components` | Tepki butonları, seçim menüleri ve sayfalama (aşağıda). |
 | `client.isReady()` | `READY` alındıysa `true`. |
 | `client.user` | Bot kullanıcı bilgisi (giriş sonrası dolar). |
 | `client.destroy()` | Bağlantıyı kapatır ve yeniden bağlanmayı durdurur. |
@@ -52,6 +53,59 @@ await client.login(process.env.MICUP_BOT_TOKEN);
 | `isBot` | Yazan hesap bot ise `true`. Kendi mesajlarını yok saymak için kullanın. |
 | `reply(content \| body)` | Bu mesaja yanıt verir. |
 | `raw` | Micup'tan gelen ham veri. |
+
+## Bileşenler (buton, menü, sayfalama)
+
+Micup, gerçek mesaj bileşenlerini (buton satırları) yalnızca kendi resmi botlarına açar; bot token'ıyla gönderilen `components` alanı sunucuda silinir. micup.js bu yüzden Components V2 benzeri bir yazımı Micup'ın desteklediği parçalara çevirir: düzen **embed** olarak, butonlar **tepki** olarak çalışır. Tıklanan tepki otomatik geri alınır (botta **Mesajları Yönet** izni gerekir).
+
+```js
+import { Client, Container, SelectMenu, Paginator } from 'micup.js';
+
+const panel = new Container()
+    .title('Oy Paneli')
+    .color('#5865F2')
+    .text('Bu ay en çok oy verenler…')
+    .separator()
+    .section({ title: 'Kurallar', text: 'Her üye 12 saatte bir oy verebilir.' })
+    .links([{ label: 'micup.me', url: 'https://micup.me' }])
+    .button({ emoji: '❤️', label: 'Oy ver', onClick: i => i.reply(`<@${i.userId}> oy verdi!`) })
+    .button({ emoji: '📊', label: 'Sıralama', onClick: i => i.update(siralama()) })
+    .timeout(0); // 0 = süresiz panel (varsayılan 15 dakika)
+
+await client.send(channelId, panel);
+```
+
+| Container | Açıklama |
+|---|---|
+| `title(text, url?)`, `author(name, { icon, url })`, `color(hex)` | Başlık, yazar, renk |
+| `text(md)`, `section({ title, text, thumbnail })`, `separator()`, `links([{ label, url }])` | İçerik, sırayla tek embed'e yazılır |
+| `thumbnail(url)`, `image(url)`, `footer(text, icon?)`, `timestamp()` | Görseller ve alt bilgi |
+| `button({ emoji, label, onClick, once, disabled, filter })` | Tepki butonu; `label` mesajın altında açıklanır (`hideLegend()` ile kapatılır) |
+| `select(menu)` | Seçim menüsü (aşağıda) |
+| `timeout(ms)`, `only(...userIds)`, `cooldown(ms)`, `filter(fn)`, `onEnd(fn)`, `keepReactions()` | Süre, kullanıcı kısıtı, art arda tıklama sınırı, süzgeç, bitişte çağrı |
+
+Tıklamada gelen `interaction`: `userId`, `user`, `member`, `guildId`, `channelId`, `messageId`, `emoji` ve `reply(body)`, `update(body)` (mesajı düzenler; yeni Container verilirse butonlar da değişir), `delete()`, `end()`.
+
+**Seçim menüsü:** seçenekler numaralı satırlar olarak yazılır, 1️⃣ … 🔟 tepkileriyle seçilir (en fazla 10).
+
+```js
+const menu = new SelectMenu({ placeholder: 'Kategori seç', onSelect: (i, secim) => i.reply(`Seçtin: ${secim.label}`) })
+    .option({ label: 'Oyun', value: 'game', emoji: '🎮' })
+    .option({ label: 'Müzik', value: 'music', description: 'Şarkı botları' });
+
+await message.reply(new Container().title('Kategoriler').select(menu).only(message.author.id));
+```
+
+**Sayfalama:** ◀️ ▶️ ile gezilir, 3'ten çok sayfada ⏮️ ⏭️ eklenir; alt bilgiye "Sayfa 2/5" yazılır.
+
+```js
+const sayfalar = gruplar.map((g, n) => new Container().title(`Liste ${n + 1}`).text(g.join('
+')));
+await client.send(channelId, new Paginator(sayfalar).only(message.author.id));
+// Çok sayıda sayfa için: new Paginator(i => sayfaUret(i), { count: 40 })
+```
+
+Sınırlar (başlık 256, açıklama 4096, toplam 6000 karakter, mesaj başına 20 tepki) gönderilmeden kontrol edilir ve aşılırsa `ComponentError` fırlatılır. Mesaj yardımcıları: `message.edit(body)`, `message.react(emoji)`, `message.delete()`.
 
 ## Ses (voice)
 
@@ -177,7 +231,7 @@ ya da ortam değişkeni: `MICUP_TELEMETRY=0` (`false`, `off`, `no` da kabul edil
 - **Intent yoktur.** Identify yalnızca `token` ve `properties` gönderir; olay filtreleme için `ignoredEvents` kullanılır.
 - **Slash komutu ve etkileşim yoktur.** Uygulama komutu uç noktası ve etkileşim olayı dokümanda bulunmuyor.
 - **Buton ve menü yalnızca birinci taraf botlarda vardır.** Üçüncü taraf bot token'ıyla gönderilen `components` alanı sunucu tarafında düşürülür.
-- Tepki (reaction) olayları (`MESSAGE_REACTION_ADD`) desteklenir; etkileşim yerine tepkiler kullanılabilir.
+- Tepki (reaction) olayları (`MESSAGE_REACTION_ADD`) desteklenir; micup.js bileşenleri (`Container`, `SelectMenu`, `Paginator`) bu yüzden tepkiyle çalışır.
 
 ## Micup'a özgü bilgiler
 
@@ -198,13 +252,14 @@ npm install
 npm test
 ```
 
-Testler, yerel bir sahte Micup sunucusuna karşı uçtan uca gateway akışını da doğrular (giriş, mesaj, yanıt, ses katılımı).
+Testler, yerel bir sahte Micup sunucusuna karşı uçtan uca gateway akışını da doğrular (giriş, mesaj, yanıt, ses katılımı, tepki butonları).
 
 ## Bilinen sınırlar
 
 - Gerçek Micup botuyla giriş, mesaj ve ses çalma (bağlanma, dosya çalma, duraklat / devam / durdur, çıkış) test edildi.
 - Resume (kopan oturumu sürdürme) yok; her yeniden bağlantıda kimlik doğrulaması yapılır.
 - Ses yalnızca gönderilir; kanaldakileri dinleme / kayıt ve görüntü (kamera, ekran paylaşımı) yok.
+- Bileşenler tepki tabanlıdır: gerçek butonlar gibi etiketli görünmez (etiketler mesajın altında yazılır) ve tepki kaldırmak için botta Mesajları Yönet izni gerekir. Bileşenli mesajlar bellekte tutulur; bot yeniden başlarsa eski mesajların butonları yeniden `client.send` / `message.edit` ile kurulmalıdır.
 
 ## Lisans
 

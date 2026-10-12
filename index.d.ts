@@ -145,7 +145,12 @@ export class Message {
     readonly author: MicupUser | null;
     readonly isBot: boolean;
     constructor(client: Client, data: MessageData);
-    reply(content: string | MessageBody): Promise<Message>;
+    reply(content: string | MessageBody | Sendable): Promise<Message>;
+    /** Botun kendi mesajını düzenler; Container / Paginator verilirse butonlar da güncellenir. */
+    edit(content: string | MessageBody | Sendable): Promise<Message>;
+    /** Mesaja tepki ekler (unicode ya da "ad:id"). */
+    react(emoji: string | { name: string; id?: string | null }): Promise<null>;
+    delete(): Promise<null>;
 }
 
 export class VoiceManager {
@@ -191,7 +196,9 @@ export class Client {
     isReady(): boolean;
     /** Durumu ve durum mesajını değiştirir (20 saniyede en fazla 5 kez). */
     setPresence(presence: PresenceInput): PresencePayload;
-    send(channelId: string, body: string | MessageBody): Promise<Message>;
+    send(channelId: string, body: string | MessageBody | Sendable): Promise<Message>;
+    /** Tepki butonları, seçim menüleri ve sayfalama. */
+    components: ComponentManager;
     rest<T = unknown>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<T>;
 
     on<E extends keyof ClientEvents>(event: E, listener: (...args: ClientEvents[E]) => void): this;
@@ -206,3 +213,103 @@ export default Client;
 
 /** Kütüphanenin yapımcısı: "DCSV" (https://dcsv.me). */
 export const MADE_BY: string;
+
+// ───────────── Bileşenler (DCSV Components) ─────────────
+// Micup, gerçek mesaj bileşenlerini yalnızca kendi resmi botlarına açar. Bu bileşenler embed + tepki olarak çalışır.
+
+export class ComponentError extends Error {}
+
+export const ComponentLimits: Readonly<{ title: number; description: number; footer: number; author: number; total: number; reactions: number; selectOptions: number; label: number }>;
+
+export type Emoji = string | { name: string; id?: string | null };
+
+export interface ComponentInteraction {
+    userId: string;
+    user: { id: string; username?: string; [key: string]: unknown };
+    member: Record<string, unknown> | null;
+    guildId: string | null;
+    channelId: string;
+    messageId: string;
+    emoji: { name: string; id: string | null };
+    /** Seçim menüsünde seçilen değer. */
+    value?: unknown;
+    option?: SelectOption;
+    /** Tıklanan mesaja yanıt olarak yazar. */
+    reply(body: string | MessageBody | Sendable): Promise<Message>;
+    /** Mesajı yeni içerikle düzenler; yeni Container / Paginator verilirse butonlar da güncellenir. */
+    update(body: string | MessageBody | Sendable): Promise<unknown>;
+    delete(): Promise<unknown>;
+    /** Bu mesajın butonlarını durdurur. */
+    end(): void;
+}
+
+export interface ButtonOptions {
+    emoji: Emoji;
+    label?: string | null;
+    onClick?: (interaction: ComponentInteraction) => unknown;
+    /** Bir kez çalışır, sonra devre dışı kalır. */
+    once?: boolean;
+    disabled?: boolean;
+    filter?: (interaction: ComponentInteraction) => boolean | Promise<boolean>;
+}
+
+export interface SelectOption { label: string; value?: unknown; description?: string | null; emoji?: Emoji | null }
+
+export class SelectMenu {
+    constructor(options?: { placeholder?: string | null; options?: SelectOption[]; onSelect?: (interaction: ComponentInteraction, option: SelectOption) => unknown });
+    option(option: SelectOption): this;
+}
+
+export interface EndInfo { reason: 'timeout' | 'deleted' | 'ended' | 'manual'; messageId: string; channelId: string }
+
+interface Interactive {
+    toMessage(): MessageBody;
+    /** Etkileşim süresi (ms). 0 = süresiz. Varsayılan 15 dakika. */
+    timeout(ms: number): this;
+    /** Yalnızca bu kullanıcılar tıklayabilir. */
+    only(...userIds: Array<string | string[]>): this;
+    onEnd(fn: (info: EndInfo) => unknown): this;
+}
+
+export class Container implements Interactive {
+    message(text: string): this;
+    title(text: string, url?: string | null): this;
+    author(name: string, options?: { icon?: string | null; url?: string | null }): this;
+    color(value: number | string): this;
+    text(markdown: string): this;
+    section(options: { title?: string | null; text?: string; thumbnail?: string | null }): this;
+    separator(): this;
+    links(items: Array<{ label: string; url: string }>): this;
+    thumbnail(url: string): this;
+    image(url: string): this;
+    footer(text: string, icon?: string | null): this;
+    timestamp(date?: Date | number | string): this;
+    button(options: ButtonOptions): this;
+    select(menu: SelectMenu | ConstructorParameters<typeof SelectMenu>[0]): this;
+    timeout(ms: number): this;
+    only(...userIds: Array<string | string[]>): this;
+    cooldown(ms: number): this;
+    keepReactions(): this;
+    hideLegend(): this;
+    filter(fn: (interaction: ComponentInteraction) => boolean | Promise<boolean>): this;
+    onEnd(fn: (info: EndInfo) => unknown): this;
+    toMessage(): MessageBody;
+}
+
+export class Paginator implements Interactive {
+    constructor(pages: Container[] | ((index: number) => Container), options?: { count?: number; start?: number; footer?: boolean });
+    index: number;
+    count: number;
+    go(index: number): this;
+    timeout(ms: number): this;
+    only(...userIds: Array<string | string[]>): this;
+    onEnd(fn: (info: EndInfo) => unknown): this;
+    toMessage(): MessageBody;
+}
+
+export type Sendable = Container | Paginator;
+
+export class ComponentManager {
+    /** Mesajın butonlarını bırakır (tepkiler yerinde kalır). */
+    release(messageId: string, reason?: string): boolean;
+}
